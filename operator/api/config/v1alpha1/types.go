@@ -60,11 +60,13 @@ const (
 	SchedulerNameKai SchedulerName = "kai-scheduler"
 	// SchedulerNameKube is the profile name for the Kubernetes default scheduler in OperatorConfiguration.
 	SchedulerNameKube SchedulerName = "default-scheduler"
+	// SchedulerNameKoordinator is the profile name for the Koordinator scheduler backend.
+	SchedulerNameKoordinator SchedulerName = "koord-scheduler"
 )
 
 var (
 	// SupportedSchedulerNames is the list of profile names allowed in scheduler.profiles[].name.
-	SupportedSchedulerNames = []SchedulerName{SchedulerNameKai, SchedulerNameKube}
+	SupportedSchedulerNames = []SchedulerName{SchedulerNameKai, SchedulerNameKube, SchedulerNameKoordinator}
 )
 
 // SchedulerConfiguration configures scheduler profiles and which is the default.
@@ -72,7 +74,7 @@ type SchedulerConfiguration struct {
 	// Profiles is the list of scheduler profiles. Each profile has a backend name and an optional config.
 	// The default-scheduler backend is always enabled to ensure that the kubernetes default scheduler is always enabled and supported.
 	// Use profile name "default-scheduler" to configure or set it as default.
-	// Valid profile names: "default-scheduler", "kai-scheduler". Use defaultProfileName to designate the default backend.
+	// Valid profile names: "default-scheduler", "kai-scheduler", "koord-scheduler". Use defaultProfileName to designate the default backend.
 	// +optional
 	Profiles []SchedulerProfile `json:"profiles,omitempty"`
 	// DefaultProfileName is the name of the default scheduler profile. If unset, defaulting sets it to "default-scheduler"
@@ -87,7 +89,7 @@ type SchedulerProfile struct {
 	// For the Kubernetes default scheduler use the standard "default-scheduler".
 	// Ensure that the name chosen is a valid scheduler name. The name will also be directly set in `Pod.Spec.SchedulerName`.
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum=kai-scheduler;default-scheduler
+	// +kubebuilder:validation:Enum=kai-scheduler;default-scheduler;koord-scheduler
 	Name SchedulerName `json:"name"`
 
 	// Config holds backend-specific options. The operator unmarshals it into the config type for this backend (see backend config types).
@@ -106,6 +108,41 @@ type KubeSchedulerConfig struct {
 	// GangScheduling indicates if Gang scheduling capability is enabled.
 	// +optional
 	GangScheduling bool `json:"gangScheduling,omitempty"`
+}
+
+// KoordinatorSchedulerConfiguration holds backend-specific options for koord-scheduler.
+// Used when unmarshalling SchedulerProfile.Config for koord-scheduler.
+type KoordinatorSchedulerConfiguration struct {
+	// GangMode is the Koordinator gang scheduling mode applied to all PodGroups created by this backend.
+	// In Strict mode, if any pod in the gang fails to schedule, the entire gang is rejected.
+	// In NonStrict mode, partially scheduled gangs are allowed.
+	// Defaults to "Strict".
+	// +optional
+	// +kubebuilder:validation:Enum=Strict;NonStrict
+	GangMode string `json:"gangMode,omitempty"`
+	// MatchPolicy controls when a GangGroup is considered satisfied.
+	// Defaults to "once-satisfied".
+	// +optional
+	// +kubebuilder:validation:Enum=once-satisfied;only-waiting;waiting-and-running
+	MatchPolicy string `json:"matchPolicy,omitempty"`
+	// ScheduleTimeoutSeconds is the maximum time (in seconds) the scheduler will wait for all
+	// minMember pods in a PodGroup to be scheduled before declaring a timeout.
+	// Defaults to 30.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	ScheduleTimeoutSeconds *int32 `json:"scheduleTimeoutSeconds,omitempty"`
+	// DefaultQoSClass injects the koordinator.sh/qosClass label into all Pods managed by this backend.
+	// Empty means no label is injected.
+	// See https://koordinator.sh/docs/user-manuals/qos-class for details.
+	// +optional
+	// +kubebuilder:validation:Enum=LSE;LSR;LS;BE
+	DefaultQoSClass string `json:"defaultQoSClass,omitempty"`
+	// TopologyKeyMappings defines custom topology key → Koordinator layer mappings.
+	// Keys are arbitrary node label keys; values must be one of: hostLayer, rackLayer, blockLayer.
+	// User-defined mappings take precedence over the built-in canonical key mappings.
+	// If a key appears in both user mappings and the built-in list, the user mapping wins.
+	// +optional
+	TopologyKeyMappings map[string]string `json:"topologyKeyMappings,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

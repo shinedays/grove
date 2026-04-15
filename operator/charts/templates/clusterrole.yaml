@@ -193,6 +193,21 @@ rules:
   - patch
   - update
 {{- end }}
+# koord-scheduler backend requires permissions to manage Koordinator PodGroup CRs.
+# Note: Kubernetes allows RBAC rules for resources that don't exist yet. If the Koordinator
+# PodGroup CRD is not installed, this rule is simply unused and causes no errors.
+- apiGroups:
+  - scheduling.sigs.k8s.io
+  resources:
+  - podgroups
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
 {{- if .Values.crdInstaller.enabled }}
 # CRD installer init container requires permissions to apply Grove CRDs on startup.
 - apiGroups:

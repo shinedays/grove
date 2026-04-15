@@ -108,3 +108,16 @@ profiles:
               enabled: false
             network:
               autoMNNVLEnabled: true
+  - name: koord-test
+    patches:
+      - op: add
+        path: /deploy/helm/releases/0/setValues
+        value:
+          replicaCount: 1
+          config:
+            leaderElection:
+              enabled: false
+            scheduler:
+              defaultProfileName: koord-scheduler
+              profiles:
+                - name: koord-scheduler
