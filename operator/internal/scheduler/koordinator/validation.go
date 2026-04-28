@@ -38,5 +38,16 @@ func validatePodCliqueSet(_ context.Context, pcs *grovecorev1alpha1.PodCliqueSet
 			pcs.Name, mnnvl.AnnotationAutoMNNVL, mnnvl.AnnotationAutoMNNVLEnabled,
 		)
 	}
+	for _, pcsg := range pcs.Spec.Template.PodCliqueScalingGroupConfigs {
+		if pcsg.TopologyConstraint == nil {
+			continue
+		}
+		return fmt.Errorf(
+			"PodCliqueSet %q uses topologyConstraint on PodCliqueScalingGroup %q; "+
+				"PCSG topology constraints are not supported with the koord-scheduler backend. "+
+				"Move the topologyConstraint to the PodCliqueSet or PodClique level, or use a backend that supports per-scaling-group topology",
+			pcs.Name, pcsg.Name,
+		)
+	}
 	return nil
 }

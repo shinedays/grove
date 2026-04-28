@@ -19,6 +19,7 @@ package koordinator
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	testutils "github.com/ai-dynamo/grove/operator/test/utils"
@@ -59,6 +60,17 @@ func newPodGroup(name string, minReplicas int32) groveschedulerv1alpha1.PodGroup
 	}
 }
 
+func newPodGroupWithRefs(name string, minReplicas int32, totalReplicas int) groveschedulerv1alpha1.PodGroup {
+	pg := newPodGroup(name, minReplicas)
+	for i := 0; i < totalReplicas; i++ {
+		pg.PodReferences = append(pg.PodReferences, groveschedulerv1alpha1.NamespacedName{
+			Namespace: "default",
+			Name:      fmt.Sprintf("%s-%d", name, i),
+		})
+	}
+	return pg
+}
+
 func defaultTestCfg() backendConfig {
 	return backendConfig{
 		GangMode:               DefaultGangMode,
@@ -83,7 +95,7 @@ func TestSyncPodGang_SingleGroup(t *testing.T) {
 	cfg := defaultTestCfg()
 
 	podGang := newTestPodGang("mygang", "default", []groveschedulerv1alpha1.PodGroup{
-		newPodGroup("pg-a", 2),
+		newPodGroupWithRefs("pg-a", 2, 2),
 	})
 
 	err := syncPodGang(context.Background(), cl, testutils.NewTestClientBuilder().Build().Scheme(), recorder, cfg, podGang)
@@ -100,8 +112,25 @@ func TestSyncPodGang_SingleGroup(t *testing.T) {
 	annotations := pg.GetAnnotations()
 	assert.Equal(t, DefaultGangMode, annotations[AnnotationGangMode])
 	assert.Equal(t, DefaultMatchPolicy, annotations[AnnotationGangMatchPolicy])
-	assert.Equal(t, "1", annotations[AnnotationGangTotalNum])
+	assert.Equal(t, "2", annotations[AnnotationGangTotalNum])
 	assert.Contains(t, annotations[AnnotationGangGroups], "default/mygang-pg-a")
+}
+
+func TestSyncPodGang_WithoutPodReferences_OmitsGangTotalNum(t *testing.T) {
+	cl := testutils.CreateDefaultFakeClient(nil)
+	recorder := record.NewFakeRecorder(10)
+	cfg := defaultTestCfg()
+
+	podGang := newTestPodGang("mygang", "default", []groveschedulerv1alpha1.PodGroup{
+		newPodGroup("pg-a", 2),
+	})
+
+	err := syncPodGang(context.Background(), cl, testutils.NewTestClientBuilder().Build().Scheme(), recorder, cfg, podGang)
+	require.NoError(t, err)
+
+	pg := getPodGroup(t, cl, "default", "mygang-pg-a")
+	assert.NotContains(t, pg.GetAnnotations(), AnnotationGangTotalNum,
+		"total-number must not be derived from the number of PodGroups")
 }
 
 func TestSyncPodGang_MultiGroup_GangGroupAnnotationsLinked(t *testing.T) {
@@ -110,8 +139,8 @@ func TestSyncPodGang_MultiGroup_GangGroupAnnotationsLinked(t *testing.T) {
 	cfg := defaultTestCfg()
 
 	podGang := newTestPodGang("multigang", "default", []groveschedulerv1alpha1.PodGroup{
-		newPodGroup("pg-a", 1),
-		newPodGroup("pg-b", 3),
+		newPodGroupWithRefs("pg-a", 1, 1),
+		newPodGroupWithRefs("pg-b", 3, 3),
 	})
 
 	err := syncPodGang(context.Background(), cl, testutils.NewTestClientBuilder().Build().Scheme(), recorder, cfg, podGang)
@@ -132,9 +161,9 @@ func TestSyncPodGang_MultiGroup_GangGroupAnnotationsLinked(t *testing.T) {
 	assert.Contains(t, groupsA, "default/multigang-pg-a")
 	assert.Contains(t, groupsA, "default/multigang-pg-b")
 
-	// totalNumber should reflect the number of PodGroups.
-	assert.Equal(t, "2", pgA.GetAnnotations()[AnnotationGangTotalNum])
-	assert.Equal(t, "2", pgB.GetAnnotations()[AnnotationGangTotalNum])
+	// totalNumber is Koordinator's total children count for each individual gang.
+	assert.Equal(t, "1", pgA.GetAnnotations()[AnnotationGangTotalNum])
+	assert.Equal(t, "3", pgB.GetAnnotations()[AnnotationGangTotalNum])
 
 	// Verify MinReplicas mapping.
 	specA, _, _ := unstructured.NestedMap(pgA.Object, "spec")
@@ -164,6 +193,62 @@ func TestSyncPodGang_Idempotent_Update(t *testing.T) {
 	err := cl.List(context.Background(), pgList, client.InNamespace("default"))
 	require.NoError(t, err)
 	assert.Len(t, pgList.Items, 1)
+}
+
+func TestSyncPodGang_UpdatePreservesExternalMetadata(t *testing.T) {
+	scheme := testutils.NewTestClientBuilder().Build().Scheme()
+	existingPG := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": podGroupGVK.Group + "/" + podGroupGVK.Version,
+			"kind":       podGroupGVK.Kind,
+			"metadata": map[string]interface{}{
+				"name":      "mygang-pg-a",
+				"namespace": "default",
+				"labels": map[string]interface{}{
+					"external.example/label": "keep",
+				},
+				"annotations": map[string]interface{}{
+					"external.example/annotation": "keep",
+					AnnotationGangTotalNum:        "99",
+					AnnotationNetworkTopologySpec: "stale",
+				},
+				"finalizers": []interface{}{"external.example/finalizer"},
+				"ownerReferences": []interface{}{
+					map[string]interface{}{
+						"apiVersion": "grove.io/v1alpha1",
+						"kind":       "PodGang",
+						"name":       "mygang",
+						"uid":        "test-uid-123",
+						"controller": true,
+					},
+				},
+			},
+			"spec": map[string]interface{}{
+				"minMember": int64(1),
+			},
+		},
+	}
+
+	cl := testutils.CreateDefaultFakeClient([]client.Object{existingPG})
+	recorder := record.NewFakeRecorder(10)
+	cfg := defaultTestCfg()
+
+	podGang := newTestPodGang("mygang", "default", []groveschedulerv1alpha1.PodGroup{
+		newPodGroupWithRefs("pg-a", 2, 2),
+	})
+
+	require.NoError(t, syncPodGang(context.Background(), cl, scheme, recorder, cfg, podGang))
+
+	pg := getPodGroup(t, cl, "default", "mygang-pg-a")
+	assert.Equal(t, "keep", pg.GetLabels()["external.example/label"])
+	assert.Equal(t, "keep", pg.GetAnnotations()["external.example/annotation"])
+	assert.Contains(t, pg.GetFinalizers(), "external.example/finalizer")
+	assert.Equal(t, DefaultGangMode, pg.GetAnnotations()[AnnotationGangMode])
+	assert.Equal(t, "2", pg.GetAnnotations()[AnnotationGangTotalNum])
+	assert.NotContains(t, pg.GetAnnotations(), AnnotationNetworkTopologySpec)
+
+	spec, _, _ := unstructured.NestedMap(pg.Object, "spec")
+	assert.EqualValues(t, 2, spec["minMember"])
 }
 
 func TestSyncPodGang_WithHostTopology(t *testing.T) {

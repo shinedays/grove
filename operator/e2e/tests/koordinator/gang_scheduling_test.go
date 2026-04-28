@@ -23,9 +23,10 @@ import (
 	"fmt"
 	"testing"
 
-	grovecorev1alpha1 "github.com/ai-dynamo/grove/operator/api/core/v1alpha1"
 	"github.com/ai-dynamo/grove/operator/api/common"
+	grovecorev1alpha1 "github.com/ai-dynamo/grove/operator/api/core/v1alpha1"
 	"github.com/ai-dynamo/grove/operator/e2e/testctx"
+	"github.com/ai-dynamo/grove/operator/e2e/waiter"
 	"github.com/ai-dynamo/grove/operator/internal/mnnvl"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,15 +34,16 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
-	// podGroupGroup/Version/Resource define the GVR for Koordinator PodGroup CRs.
-	podGroupGroup    = "scheduling.sigs.k8s.io"
-	podGroupVersion  = "v1alpha1"
-	podGroupResource = "podgroups"
+	// podGroupGroup/Version define the GVK for Koordinator PodGroup CRs.
+	podGroupGroup   = "scheduling.sigs.k8s.io"
+	podGroupVersion = "v1alpha1"
 
 	// workloadKoord is the name of the test workload for Koordinator E2E tests.
 	workloadKoord = "workload-koord"
@@ -55,10 +57,10 @@ const (
 	expectedPodGroupCount = 2
 )
 
-var podGroupGVR = schema.GroupVersionResource{
-	Group:    podGroupGroup,
-	Version:  podGroupVersion,
-	Resource: podGroupResource,
+var podGroupListGVK = schema.GroupVersionKind{
+	Group:   podGroupGroup,
+	Version: podGroupVersion,
+	Kind:    "PodGroupList",
 }
 
 // Test_KGS1_BasicGangScheduling verifies basic gang scheduling with koord-scheduler:
@@ -149,12 +151,12 @@ func Test_KGS3_MNNVLValidationRejected(t *testing.T) {
 	pcs := buildMNNVLPCS("mnnvl-koord-test")
 	logger.Infof("   Attempting to create PCS %q with grove.io/auto-mnnvl=enabled", pcs.Name)
 
-	err := tc.Clients.CRClient.Create(ctx, pcs)
+	err := tc.Client.Create(ctx, pcs)
 
 	// Cleanup in case the PCS was somehow created despite the expected rejection.
 	defer func() {
 		if err == nil {
-			_ = tc.Clients.CRClient.Delete(ctx, pcs)
+			_ = tc.Client.Delete(ctx, pcs)
 		}
 	}()
 
@@ -189,27 +191,21 @@ func verifyPodGroupsCreated(t *testing.T, tc *testctx.TestContext, pcsName strin
 	t.Helper()
 
 	podGangName := fmt.Sprintf("%s-%d", pcsName, replicaIdx)
-	// Filter by grove.io/podgang=<podGangName> so we count only PodGroups for this
-	// specific replica, not other replicas or unrelated Grove workloads in the namespace.
-	groveOpts := metav1.ListOptions{LabelSelector: fmt.Sprintf("%s=%s", common.LabelPodGang, podGangName)}
-
-	err := tc.PollForCondition(func() (bool, error) {
-		list, listErr := tc.Clients.DynamicClient.
-			Resource(podGroupGVR).
-			Namespace(tc.Namespace).
-			List(tc.Ctx, groveOpts)
-		if listErr != nil {
-			return false, fmt.Errorf("failed to list PodGroups: %w", listErr)
-		}
-		return len(list.Items) >= expectedCount, nil
-	})
+	fetchPodGroups := func(ctx context.Context) (*unstructured.UnstructuredList, error) {
+		return listPodGroupsForGang(ctx, tc, podGangName)
+	}
+	err := waiter.New[*unstructured.UnstructuredList]().
+		WithTimeout(tc.Timeout).
+		WithInterval(tc.Interval).
+		WithLogger(logger).
+		WithRetryOnError().
+		WaitUntil(tc.Ctx, fetchPodGroups, func(list *unstructured.UnstructuredList) bool {
+			return len(list.Items) >= expectedCount
+		})
 	require.NoError(t, err, "Koordinator PodGroup CRs not created in time")
 
 	// Re-fetch for annotation assertions.
-	list, err := tc.Clients.DynamicClient.
-		Resource(podGroupGVR).
-		Namespace(tc.Namespace).
-		List(tc.Ctx, groveOpts)
+	list, err := listPodGroupsForGang(tc.Ctx, tc, podGangName)
 	require.NoError(t, err, "failed to list PodGroups for annotation check")
 	require.Len(t, list.Items, expectedCount,
 		"expected exactly %d Koordinator PodGroup CRs", expectedCount)
@@ -218,12 +214,16 @@ func verifyPodGroupsCreated(t *testing.T, tc *testctx.TestContext, pcsName strin
 	var firstGangGroups string
 	for i, pg := range list.Items {
 		annotations := pg.GetAnnotations()
+		minMember, found, nestedErr := unstructured.NestedInt64(pg.Object, "spec", "minMember")
+		require.NoError(t, nestedErr, "PodGroup %d has malformed minMember", i)
+		require.True(t, found, "PodGroup %d missing minMember", i)
+
 		assert.NotEmpty(t, annotations["gang.scheduling.koordinator.sh/mode"],
 			"PodGroup %d missing GangMode annotation", i)
 		assert.NotEmpty(t, annotations["gang.scheduling.koordinator.sh/groups"],
 			"PodGroup %d missing GangGroups annotation", i)
-		assert.Equal(t, "2", annotations["gang.scheduling.koordinator.sh/total-number"],
-			"PodGroup %d GangTotalNum should be 2 (number of cliques)", i)
+		assert.Equal(t, fmt.Sprintf("%d", minMember), annotations["gang.scheduling.koordinator.sh/total-number"],
+			"PodGroup %d GangTotalNum should match this PodGroup's total child count", i)
 
 		if i == 0 {
 			firstGangGroups = annotations["gang.scheduling.koordinator.sh/groups"]
@@ -232,6 +232,18 @@ func verifyPodGroupsCreated(t *testing.T, tc *testctx.TestContext, pcsName strin
 				"GangGroups annotation must be identical across all PodGroups in the gang")
 		}
 	}
+}
+
+func listPodGroupsForGang(ctx context.Context, tc *testctx.TestContext, podGangName string) (*unstructured.UnstructuredList, error) {
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(podGroupListGVK)
+	if err := tc.Client.List(ctx, list,
+		client.InNamespace(tc.Namespace),
+		client.MatchingLabels{common.LabelPodGang: podGangName},
+	); err != nil {
+		return nil, fmt.Errorf("failed to list PodGroups: %w", err)
+	}
+	return list, nil
 }
 
 // buildMNNVLPCS constructs a PodCliqueSet with the MNNVL annotation enabled and

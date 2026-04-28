@@ -60,3 +60,38 @@ func TestValidatePodCliqueSet_NoMNNVLAnnotation_Accepted(t *testing.T) {
 	err := validatePodCliqueSet(context.Background(), pcs)
 	assert.NoError(t, err)
 }
+
+func TestValidatePodCliqueSet_PCSGTopologyConstraint_Rejected(t *testing.T) {
+	pcs := newPCS(nil)
+	pcs.Spec.Template.PodCliqueScalingGroupConfigs = []grovecorev1alpha1.PodCliqueScalingGroupConfig{
+		{
+			Name: "pcsg-a",
+			TopologyConstraint: &grovecorev1alpha1.TopologyConstraint{
+				PackDomain: grovecorev1alpha1.TopologyDomainRack,
+			},
+		},
+	}
+
+	err := validatePodCliqueSet(context.Background(), pcs)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "PCSG topology constraints are not supported")
+	assert.Contains(t, err.Error(), "pcsg-a")
+}
+
+func TestValidatePodCliqueSet_TemplateAndCliqueTopologyConstraints_Accepted(t *testing.T) {
+	pcs := newPCS(nil)
+	pcs.Spec.Template.TopologyConstraint = &grovecorev1alpha1.TopologyConstraint{
+		PackDomain: grovecorev1alpha1.TopologyDomainRack,
+	}
+	pcs.Spec.Template.Cliques = []*grovecorev1alpha1.PodCliqueTemplateSpec{
+		{
+			Name: "worker",
+			TopologyConstraint: &grovecorev1alpha1.TopologyConstraint{
+				PackDomain: grovecorev1alpha1.TopologyDomainHost,
+			},
+		},
+	}
+
+	err := validatePodCliqueSet(context.Background(), pcs)
+	assert.NoError(t, err)
+}

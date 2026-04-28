@@ -140,7 +140,9 @@ func buildPodGroupObject(
 		AnnotationGangGroups:      string(gangGroupJSON),
 		AnnotationGangMode:        cfg.GangMode,
 		AnnotationGangMatchPolicy: cfg.MatchPolicy,
-		AnnotationGangTotalNum:    strconv.Itoa(len(podGang.Spec.PodGroups)),
+	}
+	if totalChildren := len(pg.PodReferences); totalChildren >= int(pg.MinReplicas) && totalChildren > 0 {
+		annotations[AnnotationGangTotalNum] = strconv.Itoa(totalChildren)
 	}
 
 	// Per-PodGroup topology takes precedence over the global topology.
@@ -216,9 +218,41 @@ func createOrUpdatePodGroup(ctx context.Context, cl client.Client, desired *unst
 			desired.GetNamespace(), desired.GetName(), existingUID, desiredUID)
 	}
 
+	preserveExternalMetadata(existing, desired)
 	// Preserve the ResourceVersion for the update.
 	desired.SetResourceVersion(existing.GetResourceVersion())
 	return cl.Update(ctx, desired)
+}
+
+func preserveExternalMetadata(existing, desired *unstructured.Unstructured) {
+	labels := existing.GetLabels()
+	if labels == nil {
+		labels = make(map[string]string)
+	}
+	for k, v := range desired.GetLabels() {
+		labels[k] = v
+	}
+	desired.SetLabels(labels)
+
+	annotations := existing.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+	for _, key := range []string{
+		AnnotationGangGroups,
+		AnnotationGangMode,
+		AnnotationGangMatchPolicy,
+		AnnotationGangTotalNum,
+		AnnotationNetworkTopologySpec,
+	} {
+		delete(annotations, key)
+	}
+	for k, v := range desired.GetAnnotations() {
+		annotations[k] = v
+	}
+	desired.SetAnnotations(annotations)
+
+	desired.SetFinalizers(existing.GetFinalizers())
 }
 
 // controllerUID returns the UID of the controller OwnerReference on obj, or "" if none is set.

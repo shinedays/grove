@@ -31,7 +31,8 @@
 //     Preferred→PreferGather are injected as Koordinator network-topology-spec annotation on PodGroup CRs.
 //     Only three canonical keys are supported: "kubernetes.io/hostname" (hostLayer),
 //     "topology.kubernetes.io/rack" (rackLayer), "topology.kubernetes.io/block" (blockLayer).
-//     All other keys are skipped with a warning log; substring matching is not used.
+//     Unknown Required keys fail reconciliation; unknown Preferred keys are skipped with a warning log.
+//     Substring matching is not used.
 //   - QoS label: can be injected via KoordinatorSchedulerConfiguration.DefaultQoSClass, but there is
 //     no automatic semantic mapping from Grove concepts to Koordinator QoS classes.
 //   - PodGroup scheduling timeout: controlled via KoordinatorSchedulerConfiguration.ScheduleTimeoutSeconds
@@ -44,6 +45,8 @@
 // The following features cannot be supported with this backend:
 //   - MNNVL / ComputeDomain: depends on NVIDIA DRA, incompatible with Koordinator DeviceShare.
 //     PodCliqueSet with grove.io/auto-mnnvl enabled is rejected at admission.
+//   - PodCliqueScalingGroup topology constraints: per-scaling-group topology cannot be represented
+//     with the first-version PodGroup GangGroup mapping and is rejected at admission.
 //   - GPU fine-grained sharing (gpu-core, gpu-memory): requires koordinator.sh/gpu-* resource names;
 //     Grove Pods use standard nvidia.com/gpu.
 //   - ClusterTopology → ClusterNetworkTopology CRD synchronisation: Koordinator's ClusterNetworkTopology

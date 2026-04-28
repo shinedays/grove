@@ -35,12 +35,12 @@ package koordinator
 import (
 	"flag"
 
+	"github.com/ai-dynamo/grove/operator/e2e/log"
 	"github.com/ai-dynamo/grove/operator/e2e/testctx"
-	"github.com/ai-dynamo/grove/operator/e2e/utils"
 	"k8s.io/klog/v2"
 )
 
-var logger *utils.Logger
+var logger *log.Logger
 
 func init() {
 	// Suppress klog noise (same pattern as the main tests package).
@@ -52,6 +52,6 @@ func init() {
 		panic("Failed to set alsologtostderr flag")
 	}
 
-	logger = utils.NewTestLogger(utils.InfoLevel)
+	logger = log.NewTestLogger(log.InfoLevel)
 	testctx.Logger = logger
 }

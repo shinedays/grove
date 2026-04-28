@@ -45,7 +45,7 @@ const (
 	// Valid values: "once-satisfied" (default), "only-waiting", "waiting-and-running".
 	AnnotationGangMatchPolicy = "gang.scheduling.koordinator.sh/match-policy"
 
-	// AnnotationGangTotalNum specifies the total number of PodGroups in the GangGroup.
+	// AnnotationGangTotalNum specifies the total children number of a Koordinator gang.
 	AnnotationGangTotalNum = "gang.scheduling.koordinator.sh/total-number"
 )
 
