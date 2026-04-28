@@ -26,7 +26,10 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	resourcev1 "k8s.io/api/resource/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -60,6 +63,21 @@ func TestResourceClaimLabels(t *testing.T) {
 	assert.Equal(t, apicommon.LabelManagedByValue, labels[apicommon.LabelManagedByKey])
 	assert.Equal(t, "my-pcs", labels[apicommon.LabelPartOfKey])
 	assert.Equal(t, apicommon.LabelComponentNameResourceClaim, labels[apicommon.LabelComponentKey])
+}
+
+func TestIgnoreNotFoundOrNoMatch(t *testing.T) {
+	assert.NoError(t, IgnoreNotFoundOrNoMatch(nil))
+	assert.NoError(t, IgnoreNotFoundOrNoMatch(apierrors.NewNotFound(
+		schema.GroupResource{Group: "resource.k8s.io", Resource: "resourceclaims"},
+		"missing",
+	)))
+	assert.NoError(t, IgnoreNotFoundOrNoMatch(&apimeta.NoKindMatchError{
+		GroupKind:        schema.GroupKind{Group: "resource.k8s.io", Kind: "ResourceClaim"},
+		SearchedVersions: []string{"v1"},
+	}))
+
+	err := fmt.Errorf("boom")
+	assert.ErrorIs(t, IgnoreNotFoundOrNoMatch(err), err)
 }
 
 // --- FilterMatches (methods on API types) ---

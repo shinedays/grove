@@ -62,6 +62,9 @@ func (r _resource) GetExistingResourceNames(ctx context.Context, logger logr.Log
 		client.InNamespace(pcsObjMeta.Namespace),
 		client.MatchingLabels(resourceclaim.ResourceClaimLabels(pcsObjMeta.Name)),
 	); err != nil {
+		if resourceclaim.IgnoreNotFoundOrNoMatch(err) == nil {
+			return nil, nil
+		}
 		return nil, groveerr.WrapError(err,
 			errSyncPCSResourceClaim,
 			component.OperationGetExistingResourceNames,
@@ -163,10 +166,10 @@ func (r _resource) cleanupStaleResourceClaims(ctx context.Context, _ logr.Logger
 // levels: PCS, PCSG, and PCLQ). This is safe because Delete is only called during
 // PCS deletion when the entire hierarchy is being torn down.
 func (r _resource) Delete(ctx context.Context, _ logr.Logger, pcsObjMeta metav1.ObjectMeta) error {
-	if err := r.client.DeleteAllOf(ctx, &resourcev1.ResourceClaim{},
+	if err := resourceclaim.IgnoreNotFoundOrNoMatch(r.client.DeleteAllOf(ctx, &resourcev1.ResourceClaim{},
 		client.InNamespace(pcsObjMeta.Namespace),
 		client.MatchingLabels(resourceclaim.ResourceClaimLabels(pcsObjMeta.Name)),
-	); err != nil {
+	)); err != nil {
 		return groveerr.WrapError(err,
 			errDeletePCSResourceClaim,
 			component.OperationDelete,

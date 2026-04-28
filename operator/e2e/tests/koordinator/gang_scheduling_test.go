@@ -72,7 +72,7 @@ func Test_KGS1_BasicGangScheduling(t *testing.T) {
 
 	logger.Info("KGS-1: Basic gang scheduling with koord-scheduler")
 
-	tc, cleanup := testctx.PrepareTest(ctx, t, 0,
+	tc, cleanup := testctx.PrepareTest(ctx, t, 10,
 		testctx.WithWorkload(&testctx.WorkloadConfig{
 			Name:         workloadKoord,
 			YAMLPath:     "../../yaml/workload-koord.yaml",
