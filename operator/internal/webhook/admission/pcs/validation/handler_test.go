@@ -22,6 +22,7 @@ import (
 	groveconfigv1alpha1 "github.com/ai-dynamo/grove/operator/api/config/v1alpha1"
 	grovecorev1alpha1 "github.com/ai-dynamo/grove/operator/api/core/v1alpha1"
 	"github.com/ai-dynamo/grove/operator/internal/scheduler"
+	"github.com/ai-dynamo/grove/operator/internal/scheduler/koordinator"
 	"github.com/ai-dynamo/grove/operator/internal/scheduler/lpx"
 	testutils "github.com/ai-dynamo/grove/operator/test/utils"
 
@@ -34,6 +35,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
@@ -237,12 +239,75 @@ func TestValidatePodCliqueSetWithLPXBackend(t *testing.T) {
 		).
 		Build()
 
-	require.NoError(t, handler.validatePodCliqueSetWithBackend(context.Background(), pcs))
+	require.NoError(t, handler.validatePodCliqueSetWithBackend(context.Background(), nil, pcs))
 
 	pcs.Spec.Template.TopologyConstraint = &grovecorev1alpha1.TopologyConstraint{}
-	err := handler.validatePodCliqueSetWithBackend(context.Background(), pcs)
+	err := handler.validatePodCliqueSetWithBackend(context.Background(), nil, pcs)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not support Grove topology constraints")
+}
+
+// TestValidatePodCliqueSetWithBackend_UpdateAware verifies that a backend implementing
+// scheduler.PodCliqueSetUpdateValidator receives old and new objects on update, so legacy
+// objects with unchanged backend-incompatible fields are not rejected, while the same
+// configuration is still rejected on create.
+func TestValidatePodCliqueSetWithBackend_UpdateAware(t *testing.T) {
+	cl := testutils.CreateDefaultFakeClient(nil)
+	profile := groveconfigv1alpha1.SchedulerProfile{Name: groveconfigv1alpha1.SchedulerNameKoordinator}
+	koordBackend := koordinator.New(cl, cl.Scheme(), record.NewFakeRecorder(10), profile)
+	require.NoError(t, koordBackend.Init(cl))
+	registry := &testutils.FakeSchedulerRegistry{
+		Backends: map[string]scheduler.Backend{
+			string(groveconfigv1alpha1.SchedulerNameKoordinator): koordBackend,
+		},
+		DefaultBackend: string(groveconfigv1alpha1.SchedulerNameKoordinator),
+	}
+	handler := &Handler{schedRegistry: registry}
+
+	newPCSWithPCSGTopology := func() *grovecorev1alpha1.PodCliqueSet {
+		pcs := testutils.NewPodCliqueSetBuilder("test-pcs", "default", uuid.NewUUID()).
+			WithPodCliqueTemplateSpec(
+				testutils.NewPodCliqueTemplateSpecBuilder("worker").
+					WithRoleName("worker").
+					WithReplicas(1).
+					WithPodSpec(corev1.PodSpec{
+						SchedulerName: string(groveconfigv1alpha1.SchedulerNameKoordinator),
+						Containers: []corev1.Container{{
+							Name:  "worker",
+							Image: "worker",
+						}},
+					}).
+					Build(),
+			).
+			Build()
+		pcs.Spec.Template.PodCliqueScalingGroupConfigs = []grovecorev1alpha1.PodCliqueScalingGroupConfig{
+			{
+				Name:        "pcsg-a",
+				CliqueNames: []string{"worker"},
+				TopologyConstraint: &grovecorev1alpha1.TopologyConstraint{
+					PackDomain: grovecorev1alpha1.TopologyDomainRack,
+				},
+			},
+		}
+		return pcs
+	}
+
+	// Create path (old == nil): PCSG topology constraint is rejected.
+	err := handler.validatePodCliqueSetWithBackend(context.Background(), nil, newPCSWithPCSGTopology())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "PCSG topology constraints are not supported")
+
+	// Update path with the constraint unchanged: legacy object is allowed through.
+	oldPCS := newPCSWithPCSGTopology()
+	newPCS := oldPCS.DeepCopy()
+	require.NoError(t, handler.validatePodCliqueSetWithBackend(context.Background(), oldPCS, newPCS))
+
+	// Update path introducing the constraint: rejected.
+	oldWithout := newPCSWithPCSGTopology()
+	oldWithout.Spec.Template.PodCliqueScalingGroupConfigs[0].TopologyConstraint = nil
+	err = handler.validatePodCliqueSetWithBackend(context.Background(), oldWithout, newPCSWithPCSGTopology())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "PCSG topology constraints are not supported")
 }
 
 // TestValidateUpdate tests validation of PodCliqueSet update requests.

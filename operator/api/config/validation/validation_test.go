@@ -277,6 +277,17 @@ func TestValidateSchedulerConfiguration(t *testing.T) {
 			},
 			expectErrors: 0,
 		},
+		{
+			name: "valid: koordinator and kube profiles with koordinator default",
+			scheduler: &configv1alpha1.SchedulerConfiguration{
+				Profiles: []configv1alpha1.SchedulerProfile{
+					{Name: configv1alpha1.SchedulerNameKoordinator},
+					{Name: configv1alpha1.SchedulerNameKube},
+				},
+				DefaultProfileName: string(configv1alpha1.SchedulerNameKoordinator),
+			},
+			expectErrors: 0,
+		},
 		// defaultProfileName omitted (pre-defaulting → Required)
 		{
 			name: "invalid: defaultProfileName omitted",

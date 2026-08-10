@@ -47,4 +47,12 @@ var (
 		Version: mnnvl.ComputeDomainVersion,
 		Kind:    mnnvl.ComputeDomainKind,
 	}
+
+	// KoordinatorPodGroup is the sig-scheduling PodGroup CRD that Koordinator reuses
+	// for gang scheduling (created by the koord-scheduler backend).
+	KoordinatorPodGroup = schema.GroupVersionKind{
+		Group:   "scheduling.sigs.k8s.io",
+		Version: "v1alpha1",
+		Kind:    "PodGroup",
+	}
 )

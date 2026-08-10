@@ -55,6 +55,12 @@ func TestNewRegistry(t *testing.T) {
 			expectedName:  "lpx-scheduler",
 		},
 		{
+			name:          "koordinator scheduler initialization",
+			schedulerName: configv1alpha1.SchedulerNameKoordinator,
+			wantErr:       false,
+			expectedName:  "koord-scheduler",
+		},
+		{
 			name:          "unsupported scheduler",
 			schedulerName: "unknown-scheduler",
 			wantErr:       true,

@@ -234,7 +234,7 @@ func TestCheckTopologyDrift_InSync(t *testing.T) {
 		SchedulerName:     "kai-scheduler",
 		TopologyReference: topologyName,
 	}
-	inSync, message, gen, err := b.CheckTopologyDrift(ctx, ct, ref)
+	inSync, message, gen, err := b.CheckTopologyDrift(ctx, nil, ct, ref)
 	require.NoError(t, err)
 	assert.True(t, inSync)
 	assert.Empty(t, message)
@@ -258,7 +258,7 @@ func TestCheckTopologyDrift_Drift(t *testing.T) {
 		SchedulerName:     "kai-scheduler",
 		TopologyReference: topologyName,
 	}
-	inSync, message, gen, err := b.CheckTopologyDrift(ctx, ct, ref)
+	inSync, message, gen, err := b.CheckTopologyDrift(ctx, nil, ct, ref)
 	require.NoError(t, err)
 	assert.False(t, inSync)
 	assert.Contains(t, message, "levels differ")
@@ -277,7 +277,7 @@ func TestCheckTopologyDrift_NotFound(t *testing.T) {
 		SchedulerName:     "kai-scheduler",
 		TopologyReference: topologyName,
 	}
-	inSync, message, _, err := b.CheckTopologyDrift(ctx, ct, ref)
+	inSync, message, _, err := b.CheckTopologyDrift(ctx, nil, ct, ref)
 	require.NoError(t, err)
 	assert.False(t, inSync)
 	assert.Contains(t, message, "not found")
@@ -317,7 +317,7 @@ func TestCheckTopologyDriftErrors(t *testing.T) {
 				SchedulerName:     "kai-scheduler",
 				TopologyReference: topologyName,
 			}
-			_, _, _, err := b.CheckTopologyDrift(context.Background(), ct, ref)
+			_, _, _, err := b.CheckTopologyDrift(context.Background(), nil, ct, ref)
 			assert.Error(t, err)
 			assert.True(t, errors.Is(err, injectedErr))
 		})

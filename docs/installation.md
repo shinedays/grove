@@ -291,3 +291,17 @@ Currently the following schedulers support gang scheduling of `PodGang`s created
   - Disable KAI stale-gang eviction with
     `--set-string scheduler.args.default-staleness-grace-period=-1`. KAI's default eviction can terminate a
     partially scheduled gang before Grove's controller-owned termination delay.
+- [koordinator-sh/koordinator](https://github.com/koordinator-sh/koordinator) (validated with v1.8.0)
+  - Enable the `koord-scheduler` profile in the operator configuration
+    (`config.scheduler.profiles`); install Koordinator via its
+    [official Helm chart](https://koordinator-sh.github.io/charts/) first.
+  - Topology Aware Scheduling maps ClusterTopologyBindings onto Koordinator's single
+    `ClusterNetworkTopology` named `default`; only one ClusterTopologyBinding can be
+    synced per cluster, and koord-scheduler applies one network-topology-spec to the
+    whole gang (per-clique divergence is rejected at admission). TAS requires koord-scheduler
+    to run with `--enable-network-topology-manager=true` (set by the official chart since v1.7.0).
+  - MNNVL (`grove.io/mnnvl-group`) is not supported with this backend and is rejected at admission.
+  - Workload-level options are available via the `scheduling.grove.io/koordinator-quota`
+    (ElasticQuota binding, immutable after creation) and
+    `scheduling.grove.io/koordinator-schedule-timeout-seconds` annotations — see
+    [the backend README](proposals/537-koordinator-scheduler-backend/README.md) for usage.

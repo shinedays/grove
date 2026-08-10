@@ -342,6 +342,10 @@ func isSystemPod(pod *v1.Pod) bool {
 	if pod.Namespace == "kube-system" || pod.Namespace == OperatorNamespace {
 		return true
 	}
+	// Skip the grove operator itself even when it is deployed to a non-standard namespace.
+	if pod.Labels["app.kubernetes.io/name"] == "grove-operator" {
+		return true
+	}
 
 	// Skip pods with system owner references
 	for _, owner := range pod.OwnerReferences {

@@ -133,9 +133,13 @@ func desiredKAITopologyLevels(ct *grovecorev1alpha1.ClusterTopologyBinding) []ka
 }
 
 // CheckTopologyDrift compares the named KAI Topology resource against the ClusterTopologyBinding levels.
-func (b *schedulerBackend) CheckTopologyDrift(ctx context.Context, ct *grovecorev1alpha1.ClusterTopologyBinding, ref grovecorev1alpha1.SchedulerTopologyBinding) (bool, string, int64, error) {
+// k8sClient may be a non-cached client (startup pre-sync); nil falls back to the backend's own client.
+func (b *schedulerBackend) CheckTopologyDrift(ctx context.Context, k8sClient client.Client, ct *grovecorev1alpha1.ClusterTopologyBinding, ref grovecorev1alpha1.SchedulerTopologyBinding) (bool, string, int64, error) {
+	if k8sClient == nil {
+		k8sClient = b.client
+	}
 	existingTopology := &kaitopologyv1alpha1.Topology{}
-	if err := b.client.Get(ctx, client.ObjectKey{Name: ref.TopologyReference}, existingTopology); err != nil {
+	if err := k8sClient.Get(ctx, client.ObjectKey{Name: ref.TopologyReference}, existingTopology); err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, fmt.Sprintf("KAI Topology %q not found", ref.TopologyReference), 0, nil
 		}

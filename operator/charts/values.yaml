@@ -114,6 +114,7 @@ config:
       # Uncomment optional scheduler profiles only when their dependencies are installed.
       # - name: volcano
       # - name: lpx-scheduler
+      # - name: koord-scheduler   # see docs/proposals/537-koordinator-scheduler-backend/README.md
   logLevel: info
   logFormat: json
   topologyAwareScheduling:

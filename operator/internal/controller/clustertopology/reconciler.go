@@ -96,7 +96,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			}
 		} else {
 			// Externally managed: drift detection only
-			inSync, msg, gen, err := tasBackend.CheckTopologyDrift(ctx, ct, *ref)
+			inSync, msg, gen, err := tasBackend.CheckTopologyDrift(ctx, nil, ct, *ref)
 			if err != nil {
 				reconcileErr = errors.Join(reconcileErr, err)
 				msg = err.Error()

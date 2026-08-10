@@ -1,0 +1,36 @@
+# Workload Koord Atomic: gang-atomicity workload for koord-scheduler E2E tests (KGS6).
+# Three pods each requesting 40 CPU (one per 64-CPU KWOK node) with minAvailable 3: with a
+# single schedulable node only one pod could ever fit, so the whole gang must stay Pending.
+---
+apiVersion: grove.io/v1alpha1
+kind: PodCliqueSet
+metadata:
+  name: workload-koord-atomic
+  labels:
+    app: workload-koord-atomic
+spec:
+  replicas: 1
+  template:
+    cliques:
+      - name: pc-atomic
+        spec:
+          roleName: role-atomic
+          replicas: 3
+          minAvailable: 3
+          podSpec:
+            terminationGracePeriodSeconds: 5
+            schedulerName: koord-scheduler
+            tolerations:
+              - key: fake-node
+                value: "true"
+                effect: NoSchedule
+            nodeSelector:
+              type: kwok
+            containers:
+              - name: pc-atomic
+                image: registry:5001/busybox:latest
+                command: ["sleep", "infinity"]
+                resources:
+                  requests:
+                    cpu: "40"
+                    memory: 100Mi

@@ -28,6 +28,10 @@ import (
 // SynchronizeTopology synchronizes scheduler-specific topology resources at operator startup.
 // Lists all existing ClusterTopologyBinding resources and ensures backend topologies exist for each.
 // Called before controllers start to avoid races with PCS reconciliation.
+//
+// A sync failure for one ClusterTopologyBinding is logged and skipped rather than aborting startup:
+// the controller retries and reports it in status, and crashing would take every controller and
+// webhook down over one misconfigured binding. Only list failures are fatal.
 func SynchronizeTopology(ctx context.Context, cl client.Client, logger logr.Logger, backends map[string]scheduler.TopologyAwareBackend) error {
 	ctList := &grovecorev1alpha1.ClusterTopologyBindingList{}
 	if err := cl.List(ctx, ctList); err != nil {
@@ -38,13 +42,18 @@ func SynchronizeTopology(ctx context.Context, cl client.Client, logger logr.Logg
 		schedulerRefMap := BuildSchedulerReferenceMap(ct.Spec.SchedulerTopologyBindings)
 
 		for backendName, tasBackend := range backends {
-			// Only sync grove-managed scheduler topology resources (not listed in schedulerTopologyReferences).
-			// Externally-managed scheduler topology resources are handled by the ClusterTopologyBinding controller via CheckTopologyDrift.
-			if _, isExternallyManaged := schedulerRefMap[backendName]; isExternallyManaged {
+			if ref, isExternallyManaged := schedulerRefMap[backendName]; isExternallyManaged {
+				// Externally-managed resources are administrator-owned; run the drift check at startup
+				// too so backends that derive state from it (koordinator topology-key mapping) are primed.
+				if _, _, _, err := tasBackend.CheckTopologyDrift(ctx, cl, ct, *ref); err != nil {
+					logger.Error(err, "Startup topology drift check failed; the ClusterTopologyBinding controller will retry",
+						"clusterTopologyBinding", ct.Name, "backend", backendName)
+				}
 				continue
 			}
 			if err := tasBackend.SyncTopology(ctx, cl, ct); err != nil {
-				return fmt.Errorf("failed to sync topology %s for backend %s: %w", ct.Name, backendName, err)
+				logger.Error(err, "Startup topology sync failed; the ClusterTopologyBinding controller will retry and report status",
+					"clusterTopologyBinding", ct.Name, "backend", backendName)
 			}
 		}
 		logger.Info("Synchronized backend topologies for ClusterTopologyBinding", "name", ct.Name)

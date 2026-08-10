@@ -1,0 +1,55 @@
+# Workload Koord: Basic gang scheduling workload for koord-scheduler E2E tests.
+# Two cliques (pc-a: 2 replicas, pc-b: 1 replica) using koord-scheduler on KWOK fake nodes.
+---
+apiVersion: grove.io/v1alpha1
+kind: PodCliqueSet
+metadata:
+  name: workload-koord
+  labels:
+    app: workload-koord
+spec:
+  replicas: 1
+  template:
+    cliques:
+      - name: pc-a
+        spec:
+          roleName: role-a
+          replicas: 2
+          minAvailable: 2
+          podSpec:
+            terminationGracePeriodSeconds: 5
+            schedulerName: koord-scheduler
+            tolerations:
+              - key: fake-node
+                value: "true"
+                effect: NoSchedule
+            nodeSelector:
+              type: kwok
+            containers:
+              - name: pc-a
+                image: registry:5001/busybox:latest
+                command: ["sleep", "infinity"]
+                resources:
+                  requests:
+                    memory: 100Mi
+      - name: pc-b
+        spec:
+          roleName: role-b
+          replicas: 1
+          minAvailable: 1
+          podSpec:
+            terminationGracePeriodSeconds: 5
+            schedulerName: koord-scheduler
+            tolerations:
+              - key: fake-node
+                value: "true"
+                effect: NoSchedule
+            nodeSelector:
+              type: kwok
+            containers:
+              - name: pc-b
+                image: registry:5001/busybox:latest
+                command: ["sleep", "infinity"]
+                resources:
+                  requests:
+                    memory: 100Mi

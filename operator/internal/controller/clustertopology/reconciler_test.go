@@ -71,7 +71,7 @@ func (f *fakeBackend) TopologyResourceName(ct *grovecorev1alpha1.ClusterTopology
 	return ct.Name
 }
 
-func (f *fakeBackend) CheckTopologyDrift(_ context.Context, _ *grovecorev1alpha1.ClusterTopologyBinding, _ grovecorev1alpha1.SchedulerTopologyBinding) (bool, string, int64, error) {
+func (f *fakeBackend) CheckTopologyDrift(_ context.Context, _ client.Client, _ *grovecorev1alpha1.ClusterTopologyBinding, _ grovecorev1alpha1.SchedulerTopologyBinding) (bool, string, int64, error) {
 	f.driftCalled = true
 	return f.driftInSync, f.driftMessage, f.driftGen, f.driftErr
 }

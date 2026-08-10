@@ -138,6 +138,6 @@ func (s *FakeTopologyAwareBackend) OnTopologyDelete(_ context.Context, _ client.
 }
 
 // CheckTopologyDrift is a no-op for the fake topology-aware backend.
-func (s *FakeTopologyAwareBackend) CheckTopologyDrift(_ context.Context, _ *grovecorev1alpha1.ClusterTopologyBinding, _ grovecorev1alpha1.SchedulerTopologyBinding) (bool, string, int64, error) {
+func (s *FakeTopologyAwareBackend) CheckTopologyDrift(_ context.Context, _ client.Client, _ *grovecorev1alpha1.ClusterTopologyBinding, _ grovecorev1alpha1.SchedulerTopologyBinding) (bool, string, int64, error) {
 	return true, "", 0, nil
 }

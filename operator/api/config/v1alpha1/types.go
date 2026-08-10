@@ -60,6 +60,8 @@ const (
 	SchedulerNameVolcano SchedulerName = "volcano"
 	// SchedulerNameLPX is the LPX scheduler backend.
 	SchedulerNameLPX SchedulerName = "lpx-scheduler"
+	// SchedulerNameKoordinator is the Koordinator scheduler backend. It supports gang scheduling via Koordinator PodGroup.
+	SchedulerNameKoordinator SchedulerName = "koord-scheduler"
 )
 
 var (
@@ -69,6 +71,7 @@ var (
 		SchedulerNameKube,
 		SchedulerNameVolcano,
 		SchedulerNameLPX,
+		SchedulerNameKoordinator,
 	}
 )
 
@@ -77,7 +80,7 @@ type SchedulerConfiguration struct {
 	// Profiles is the list of scheduler profiles. Each profile has a backend name and an optional config.
 	// The default-scheduler backend is always enabled to ensure that the kubernetes default scheduler is always enabled and supported.
 	// Use profile name "default-scheduler" to configure or set it as default.
-	// Valid profile names: "default-scheduler", "kai-scheduler", "volcano", "lpx-scheduler".
+	// Valid profile names: "default-scheduler", "kai-scheduler", "volcano", "lpx-scheduler", "koord-scheduler".
 	// Use defaultProfileName to designate the default backend.
 	// +optional
 	Profiles []SchedulerProfile `json:"profiles,omitempty"`
@@ -93,7 +96,7 @@ type SchedulerProfile struct {
 	// For the Kubernetes default scheduler use the standard "default-scheduler".
 	// Ensure that the name chosen is a valid scheduler name. The name will also be directly set in `Pod.Spec.SchedulerName`.
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum=kai-scheduler;default-scheduler;volcano;lpx-scheduler
+	// +kubebuilder:validation:Enum=kai-scheduler;default-scheduler;volcano;lpx-scheduler;koord-scheduler
 	Name SchedulerName `json:"name"`
 
 	// Config holds backend-specific options. The operator unmarshals it into the config type for this backend (see backend config types).
@@ -112,6 +115,46 @@ type KubeSchedulerConfig struct {
 	// GangScheduling indicates if Gang scheduling capability is enabled.
 	// +optional
 	GangScheduling bool `json:"gangScheduling,omitempty"`
+}
+
+// KoordinatorSchedulerConfiguration holds backend-specific options for koord-scheduler.
+// Used when unmarshalling SchedulerProfile.Config for koord-scheduler.
+type KoordinatorSchedulerConfiguration struct {
+	// GangMode is the Koordinator gang scheduling mode applied to all PodGroups created by this backend.
+	// It controls failure handling: in Strict mode, if any pod in the gang fails to schedule, the
+	// entire gang group is rejected and already-assumed pods are rolled back. In NonStrict mode, a
+	// single pod's scheduling failure does not reject the gang; already-assumed pods keep waiting
+	// for the remaining ones. In both modes, no pod is bound until the gang's minMember is
+	// satisfied — pods wait in the Permit stage up to ScheduleTimeoutSeconds.
+	// Defaults to "Strict".
+	// +optional
+	// +kubebuilder:validation:Enum=Strict;NonStrict
+	GangMode string `json:"gangMode,omitempty"`
+	// MatchPolicy controls when a GangGroup is considered satisfied.
+	// Defaults to "once-satisfied".
+	// +optional
+	// +kubebuilder:validation:Enum=once-satisfied;only-waiting;waiting-and-running
+	MatchPolicy string `json:"matchPolicy,omitempty"`
+	// ScheduleTimeoutSeconds is the maximum time (in seconds) the scheduler will wait for all
+	// minMember pods in a PodGroup to be scheduled before declaring a timeout.
+	// Defaults to 30.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	ScheduleTimeoutSeconds *int32 `json:"scheduleTimeoutSeconds,omitempty"`
+	// DefaultQoSClass injects the koordinator.sh/qosClass label into all Pods managed by this backend.
+	// Empty means no label is injected.
+	// See https://koordinator.sh/docs/user-manuals/qos-class for details.
+	// +optional
+	// +kubebuilder:validation:Enum=LSE;LSR;LS;BE
+	DefaultQoSClass string `json:"defaultQoSClass,omitempty"`
+	// TopologyKeyMappings defines custom topology key → Koordinator layer mappings.
+	// Keys are arbitrary node label keys; values are layer names that must match the layers
+	// defined in the cluster's Koordinator ClusterNetworkTopology CR (or the built-in
+	// NodeTopologyLayer / ClusterTopologyLayer).
+	// User-defined mappings take precedence over the built-in mapping
+	// (kubernetes.io/hostname → NodeTopologyLayer).
+	// +optional
+	TopologyKeyMappings map[string]string `json:"topologyKeyMappings,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

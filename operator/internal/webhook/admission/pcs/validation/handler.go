@@ -84,7 +84,7 @@ func (h *Handler) ValidateCreate(ctx context.Context, obj runtime.Object) (admis
 	allErrs = append(allErrs, mnnvl.ValidatePCSOnCreate(pcs, h.networkConfig.AutoMNNVLEnabled)...)
 
 	// Scheduler-backend-specific validation
-	if err := h.validatePodCliqueSetWithBackend(ctx, pcs); err != nil {
+	if err := h.validatePodCliqueSetWithBackend(ctx, nil, pcs); err != nil {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec"), pcs.Spec, err.Error()))
 	}
 
@@ -110,7 +110,7 @@ func (h *Handler) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Obj
 	errs = append(errs, mnnvl.ValidatePCSOnUpdate(oldPCS, newPCS)...)
 
 	// Scheduler-backend-specific validation
-	if err := h.validatePodCliqueSetWithBackend(ctx, newPCS); err != nil {
+	if err := h.validatePodCliqueSetWithBackend(ctx, oldPCS, newPCS); err != nil {
 		errs = append(errs, field.Invalid(field.NewPath("spec"), newPCS.Spec, err.Error()))
 	}
 
@@ -129,7 +129,9 @@ func (h *Handler) ValidateDelete(_ context.Context, _ runtime.Object) (admission
 
 // validatePodCliqueSetWithBackend resolves the scheduler backend for the PCS and runs backend-specific validation.
 // All cliques share the same (resolved) schedulerName after validateSchedulerNames, so we use the first clique.
-func (h *Handler) validatePodCliqueSetWithBackend(ctx context.Context, pcs *v1alpha1.PodCliqueSet) error {
+// On update (oldPCS != nil), backends that implement scheduler.PodCliqueSetUpdateValidator receive both the
+// old and new objects so they can avoid rejecting legacy objects for unchanged fields.
+func (h *Handler) validatePodCliqueSetWithBackend(ctx context.Context, oldPCS, pcs *v1alpha1.PodCliqueSet) error {
 	schedulerName := ""
 	if len(pcs.Spec.Template.Cliques) > 0 && pcs.Spec.Template.Cliques[0] != nil {
 		schedulerName = pcs.Spec.Template.Cliques[0].Spec.PodSpec.SchedulerName
@@ -141,6 +143,11 @@ func (h *Handler) validatePodCliqueSetWithBackend(ctx context.Context, pcs *v1al
 			return fmt.Errorf("default scheduler backend is not configured")
 		}
 		return fmt.Errorf("schedulerName %q is not enabled in OperatorConfiguration", schedulerName)
+	}
+	if oldPCS != nil {
+		if updateValidator, ok := backend.(scheduler.PodCliqueSetUpdateValidator); ok {
+			return updateValidator.ValidatePodCliqueSetUpdate(ctx, oldPCS, pcs)
+		}
 	}
 	return backend.ValidatePodCliqueSet(ctx, pcs)
 }

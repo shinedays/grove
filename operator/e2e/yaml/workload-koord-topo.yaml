@@ -1,0 +1,41 @@
+# Workload Koord Topo: topology-aware gang for koord-scheduler E2E tests (KGS5).
+# One clique of 4 pods, each requesting 40 CPU so exactly one pod fits per 64-CPU KWOK node;
+# pack.required=rack forces all 4 onto the only rack that has 4 nodes. The referenced
+# ClusterTopologyBinding "koord-topology" is created by the test before this workload.
+---
+apiVersion: grove.io/v1alpha1
+kind: PodCliqueSet
+metadata:
+  name: workload-koord-topo
+  labels:
+    app: workload-koord-topo
+spec:
+  replicas: 1
+  template:
+    topologyConstraint:
+      topologyName: koord-topology
+      pack:
+        required: rack
+    cliques:
+      - name: pc-topo
+        spec:
+          roleName: role-topo
+          replicas: 4
+          minAvailable: 4
+          podSpec:
+            terminationGracePeriodSeconds: 5
+            schedulerName: koord-scheduler
+            tolerations:
+              - key: fake-node
+                value: "true"
+                effect: NoSchedule
+            nodeSelector:
+              type: kwok
+            containers:
+              - name: pc-topo
+                image: registry:5001/busybox:latest
+                command: ["sleep", "infinity"]
+                resources:
+                  requests:
+                    cpu: "40"
+                    memory: 100Mi

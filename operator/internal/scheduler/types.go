@@ -52,6 +52,23 @@ type Backend interface {
 	ValidatePodCliqueSet(ctx context.Context, pcs *grovecorev1alpha1.PodCliqueSet) error
 }
 
+// PodCliqueSetUpdateValidator is an optional interface for scheduler backends that need
+// update-aware admission validation (old and new object), e.g. to tolerate unchanged fields on
+// legacy workloads. Backends that do not implement it fall back to ValidatePodCliqueSet on update.
+type PodCliqueSetUpdateValidator interface {
+	// ValidatePodCliqueSetUpdate runs scheduler-specific validations on a PodCliqueSet update.
+	ValidatePodCliqueSetUpdate(ctx context.Context, oldPCS, newPCS *grovecorev1alpha1.PodCliqueSet) error
+}
+
+// PodCliqueSetAwarePodPreparer is an optional interface for scheduler backends whose pod preparation
+// needs PodCliqueSet-level configuration that is not inherited into pod metadata. When implemented,
+// the pod component calls PreparePodForPodCliqueSet instead of PreparePod (which it must subsume).
+type PodCliqueSetAwarePodPreparer interface {
+	// PreparePodForPodCliqueSet adds scheduler-backend-specific configuration to the given
+	// Pod object prior to its creation, with access to the owning PodCliqueSet.
+	PreparePodForPodCliqueSet(pcs *grovecorev1alpha1.PodCliqueSet, pod *corev1.Pod) error
+}
+
 // TopologyAwareBackend is an optional interface that Backend
 // implementations may satisfy if they manage a scheduler-specific topology CRD.
 // The ClusterTopologyBinding controller type-asserts each registered backend to this
@@ -82,9 +99,12 @@ type TopologyAwareBackend interface {
 	// CheckTopologyDrift compares the scheduler-specific topology resource named by
 	// ref.TopologyReference against the ClusterTopologyBinding's levels.
 	// Returns (inSync bool, message string, observedGeneration int64, error).
-	// Called for backends listed in schedulerTopologyReferences (externally-managed path).
+	// Called for backends listed in schedulerTopologyBindings (externally-managed path).
+	// k8sClient may be a non-cached client for use before the manager cache is started
+	// (startup pre-sync). If nil, the backend falls back to its own client.
 	CheckTopologyDrift(
 		ctx context.Context,
+		k8sClient client.Client,
 		ct *grovecorev1alpha1.ClusterTopologyBinding,
 		ref grovecorev1alpha1.SchedulerTopologyBinding,
 	) (bool, string, int64, error)

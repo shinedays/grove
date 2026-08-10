@@ -192,7 +192,13 @@ func (r _resource) buildResource(pcs *grovecorev1alpha1.PodCliqueSet, pclq *grov
 			"failed to prepare pod spec with scheduler backend",
 		)
 	}
-	if err = backend.PreparePod(pod); err != nil {
+	// PCS-aware backends receive the PodCliqueSet (see scheduler.PodCliqueSetAwarePodPreparer).
+	if pcsAware, ok := backend.(scheduler.PodCliqueSetAwarePodPreparer); ok {
+		err = pcsAware.PreparePodForPodCliqueSet(pcs, pod)
+	} else {
+		err = backend.PreparePod(pod)
+	}
+	if err != nil {
 		return groveerr.WrapError(
 			err,
 			errCodeBuildPodResource,

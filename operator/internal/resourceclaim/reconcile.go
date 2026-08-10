@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	resourcev1 "k8s.io/api/resource/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -125,7 +126,16 @@ func DeleteResourceClaim(ctx context.Context, cl client.Client, name, namespace 
 	rc := &resourcev1.ResourceClaim{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 	}
-	return client.IgnoreNotFound(cl.Delete(ctx, rc))
+	return IgnoreNotFoundOrNoMatch(cl.Delete(ctx, rc))
+}
+
+// IgnoreNotFoundOrNoMatch ignores both missing ResourceClaim objects and clusters
+// where the ResourceClaim API itself is unavailable.
+func IgnoreNotFoundOrNoMatch(err error) error {
+	if err == nil || apierrors.IsNotFound(err) || apimeta.IsNoMatchError(err) {
+		return nil
+	}
+	return err
 }
 
 // EnsureResourceClaims creates ResourceClaims for a list of ResourceSharer entries
@@ -326,8 +336,8 @@ func CleanupStalePerReplicaRCs(
 		sel = sel.Add(*notInReq)
 	}
 
-	return cl.DeleteAllOf(ctx, &resourcev1.ResourceClaim{},
+	return IgnoreNotFoundOrNoMatch(cl.DeleteAllOf(ctx, &resourcev1.ResourceClaim{},
 		client.InNamespace(namespace),
 		client.MatchingLabelsSelector{Selector: sel},
-	)
+	))
 }
